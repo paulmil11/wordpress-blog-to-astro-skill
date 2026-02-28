@@ -1,0 +1,5 @@
+{
+  "name": "wordpress-blog-to-astro",
+  "description": "WordPress to Astro migration toolkit — scripts, patterns, and troubleshooting from real migrations",
+  "version": "1.0.0"
+}
