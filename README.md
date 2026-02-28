@@ -80,6 +80,20 @@ Ready-to-customize code for every phase:
 - **Boilerplate Cleanup Pattern** — URL-pattern-based detection that distinguishes host content from guest content
 - **Platform Redirect Generators** — Output `_redirects` (Netlify/Cloudflare) or `vercel.json` format
 - **CJK Reading Time** — Counts Chinese characters (~350/min) separately from Latin words (~238/min)
+- **Astro-to-Markdown Converter** — For two-stage migrations where posts were first generated as `.astro` pages then converted to content collections
+
+### `post-migration-patterns.md` — Post-Migration Enhancements
+Patterns for building out the Astro site after content is migrated:
+
+- **SEO Meta Tags** — Full OG, Twitter Card, JSON-LD structured data, canonical URLs, noindex support
+- **Auto-Generated Featured Images** — SVG generation from post titles with keyword-based icons (no need to create a unique image per post)
+- **Category-Matched CTAs** — Dynamic calls-to-action mapped to post categories with UTM tracking
+- **Related Posts** — Category-overlap matching with fallback to recent posts
+- **Newsletter Integration** — ConvertKit/Kit forms with Intersection Observer lazy loading
+- **WordPress CSS Compatibility** — Styles for alignment classes, video embeds, tables, code blocks, blockquotes, spacer blocks
+- **Dynamic Routes with Draft Filtering** — `[slug].astro` pattern with dev-only draft visibility
+- **robots.txt** — Template for Astro static sites with sitemap reference
+- **DNS Prefetch** — Performance optimization for third-party scripts
 
 ### `common-issues.md` — Troubleshooting Guide
 Solutions for problems we actually hit:
@@ -90,6 +104,8 @@ Solutions for problems we actually hit:
 - **Mixed guest/host boilerplate** — Show notes sections with both guest links (keep) and host links (remove)
 - **WordPress embed wrappers** — `<div class="wp-block-embed__wrapper">` containing bare URLs instead of iframes
 - **Broken nested markdown** — WordPress editors producing `[[link](url1) text](url2)`
+- **WordPress styled callouts** — `has-background` class paragraphs getting stripped by Turndown
+- **Figure/figcaption mangling** — `<figure>` elements losing captions during conversion
 - **Cloudflare Pages vs Workers** — Why `npx wrangler deploy` fails for static sites and what to use instead
 - **MDX parsing failures** — Why plain markdown wins for WordPress content
 - **Content collection validation** — Making Zod schemas forgiving enough for messy WordPress data

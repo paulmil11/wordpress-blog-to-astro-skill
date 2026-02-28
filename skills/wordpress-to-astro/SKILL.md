@@ -126,6 +126,7 @@ project/
 │   ├── components/
 │   │   ├── Header.astro
 │   │   ├── Footer.astro
+│   │   ├── FeaturedImage.astro      # Auto-generated SVG featured images
 │   │   └── RelatedPosts.astro       # Category-based recommendations
 │   └── utils/
 │       └── reading-time.ts          # CJK-aware reading time
@@ -164,3 +165,4 @@ When starting a migration, ask the user about:
 See supporting files for detailed patterns:
 - `migration-scripts.md` — Script templates and implementation details
 - `common-issues.md` — Troubleshooting guide from real migrations
+- `post-migration-patterns.md` — SEO, featured images, CTAs, WordPress CSS compatibility, related posts, newsletter integration

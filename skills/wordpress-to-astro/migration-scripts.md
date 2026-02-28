@@ -69,7 +69,11 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 
 const turndown = new TurndownService({
   headingStyle: 'atx',
+  bulletListMarker: '-',
   codeBlockStyle: 'fenced',
+  emDelimiter: '*',
+  strongDelimiter: '**',
+  hr: '---',
 });
 
 // CUSTOMIZE: Add rules for your site's embed types
@@ -79,11 +83,21 @@ turndown.addRule('iframes', {
   replacement: (content, node) => `\n\n${node.outerHTML}\n\n`,
 });
 
-// Preserve div wrappers containing iframes
-turndown.addRule('iframeWrappers', {
+// Preserve div wrappers containing iframes (responsive embed wrappers)
+turndown.addRule('embedWrappers', {
   filter: (node) =>
     node.nodeName === 'DIV' &&
-    node.querySelector('iframe'),
+    node.querySelector('iframe') !== null,
+  replacement: (content, node) => `\n\n${node.outerHTML}\n\n`,
+});
+
+// Preserve WordPress styled callout boxes as raw HTML
+turndown.addRule('styledCallouts', {
+  filter: (node) => {
+    if (node.nodeName !== 'P') return false;
+    const cls = node.getAttribute('class') || '';
+    return cls.includes('has-background');
+  },
   replacement: (content, node) => `\n\n${node.outerHTML}\n\n`,
 });
 
@@ -93,11 +107,43 @@ turndown.addRule('tables', {
   replacement: (content, node) => `\n\n${node.outerHTML}\n\n`,
 });
 
+// Convert <figure> with <img> to markdown image + optional caption
+turndown.addRule('figure', {
+  filter: 'figure',
+  replacement: (content, node) => {
+    const img = node.querySelector('img');
+    if (!img) return content;
+    const src = img.getAttribute('src') || '';
+    const alt = img.getAttribute('alt') || '';
+    const caption = node.querySelector('figcaption');
+    const captionText = caption ? caption.textContent.trim() : '';
+    if (captionText) return `\n\n![${alt}](${src})\n*${captionText}*\n\n`;
+    return `\n\n![${alt}](${src})\n\n`;
+  },
+});
+
+// Remove WordPress spacer blocks
+turndown.addRule('wpSpacer', {
+  filter: (node) =>
+    node.nodeName === 'DIV' &&
+    node.classList && node.classList.contains('wp-block-spacer'),
+  replacement: () => '',
+});
+
+// Clean img tags to proper markdown format
+turndown.addRule('cleanImg', {
+  filter: 'img',
+  replacement: (content, node) => {
+    const src = node.getAttribute('src') || '';
+    const alt = node.getAttribute('alt') || '';
+    return `![${alt}](${src})`;
+  },
+});
+
 // Strip WordPress block comments
 turndown.addRule('wpComments', {
   filter: (node) =>
-    node.nodeType === 8 && // Comment node
-    node.data.trim().startsWith('wp:'),
+    node.nodeType === 8, // Comment node
   replacement: () => '',
 });
 
@@ -324,10 +370,22 @@ function generateVercelRedirects(mapping) {
 }
 ```
 
-## 7. CJK-Aware Reading Time
+## 7. Reading Time
 
 ```typescript
-// src/utils/reading-time.ts
+// src/utils/reading-time.ts — English version (238 words/min)
+export function getReadingTime(content: string): string {
+  const text = content.replace(/<[^>]*>/g, '');
+  const words = text.trim().split(/\s+/).length;
+  const minutes = Math.ceil(words / 238);
+  return `${minutes} min read`;
+}
+```
+
+For CJK/multilingual content, count characters separately:
+
+```typescript
+// CJK-aware version
 export function getReadingTime(content: string): string {
   const text = content.replace(/<[^>]*>/g, '');
   const cjkChars = (text.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/g) || []).length;
@@ -337,4 +395,79 @@ export function getReadingTime(content: string): string {
   const minutes = Math.ceil((cjkChars / 350) + (latinWords / 238));
   return `${Math.max(1, minutes)} 分鐘閱讀`;
 }
+```
+
+## 8. Astro Page to Content Collection Converter
+
+When migration was done in two stages (WordPress → Astro pages → content collections), use this script to convert `.astro` page files to `.md`:
+
+```javascript
+// convert-post.mjs
+// Convert .astro blog post pages to content collection markdown
+// Usage:
+//   node scripts/convert-post.mjs src/pages/my-post.astro    # single
+//   node scripts/convert-post.mjs --all                       # batch
+
+import fs from 'fs';
+import path from 'path';
+import TurndownService from 'turndown';
+
+function decodeEntities(str) {
+  return str
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&nbsp;/g, ' ');
+}
+
+// Optional: load a posts.json for supplemental metadata (e.g. rawDate)
+const postsJsonPath = path.resolve('src/data/posts.json');
+let postsLookup = {};
+if (fs.existsSync(postsJsonPath)) {
+  for (const p of JSON.parse(fs.readFileSync(postsJsonPath, 'utf-8'))) {
+    postsLookup[p.slug] = p;
+  }
+}
+
+function parseAstroPost(filePath) {
+  const raw = fs.readFileSync(filePath, 'utf-8');
+  const fmMatch = raw.match(/^---\n([\s\S]*?)\n---/);
+  if (!fmMatch) throw new Error('No frontmatter in ' + filePath);
+  const fm = fmMatch[1];
+
+  const getString = (name) => {
+    const m = fm.match(new RegExp(`const\\s+${name}\\s*=\\s*["'\`]([\\s\\S]*?)["'\`]\\s*;`));
+    return m ? m[1].replace(/\\"/g, '"').replace(/\\'/g, "'") : undefined;
+  };
+  const getArray = (name) => {
+    const m = fm.match(new RegExp(`const\\s+${name}\\s*=\\s*\\[([^\\]]*?)\\]`));
+    if (!m) return [];
+    return m[1].split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean).map(decodeEntities);
+  };
+
+  // Extract HTML from content template literal
+  const contentMatch = fm.match(/const\s+content\s*=\s*`([\s\S]*?)`\s*;/);
+  if (!contentMatch) throw new Error('No content in ' + filePath);
+
+  return {
+    title: getString('title'), description: getString('description'),
+    date: getString('date'), slug: getString('slug'),
+    author: getString('author'), image: getString('image'),
+    categories: getArray('categories'), html: contentMatch[1],
+  };
+}
+
+// Pages that are NOT blog posts — skip during --all
+const NON_BLOG_PAGES = new Set([
+  'index', '404', 'team', 'subscribe', 'success', 'thank-you',
+  // CUSTOMIZE: add your non-blog page filenames
+]);
+
+function isBlogPostFile(filePath) {
+  const basename = path.basename(filePath, '.astro');
+  if (NON_BLOG_PAGES.has(basename)) return false;
+  const raw = fs.readFileSync(filePath, 'utf-8');
+  return /const\s+content\s*=\s*`/.test(raw);
+}
+
+// Use Turndown with all custom rules (see section 2) to convert,
+// then write markdown with frontmatter to src/content/posts/<slug>.md
 ```

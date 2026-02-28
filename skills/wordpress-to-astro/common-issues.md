@@ -139,6 +139,46 @@ Follow Us:
 
 ## WordPress-Specific Gotchas
 
+### WordPress styled callout boxes (`has-background`)
+
+**Problem:** WordPress Gutenberg blocks with background colors (`<p class="has-background has-luminous-vivid-amber-background-color">`) get stripped to plain text by Turndown.
+
+**Solution:** Add a Turndown rule to preserve these as raw HTML:
+
+```javascript
+turndown.addRule('styledCallouts', {
+  filter: (node) => {
+    if (node.nodeName !== 'P') return false;
+    return (node.getAttribute('class') || '').includes('has-background');
+  },
+  replacement: (content, node) => `\n\n${node.outerHTML}\n\n`,
+});
+```
+
+Then style them in your blog post CSS to match the original appearance.
+
+### Figure/figcaption not converting cleanly
+
+**Problem:** `<figure>` elements with `<img>` and `<figcaption>` get mangled by Turndown, producing broken markdown or losing captions.
+
+**Solution:** Add a custom rule to extract the image and caption separately:
+
+```javascript
+turndown.addRule('figure', {
+  filter: 'figure',
+  replacement: (content, node) => {
+    const img = node.querySelector('img');
+    if (!img) return content;
+    const src = img.getAttribute('src') || '';
+    const alt = img.getAttribute('alt') || '';
+    const caption = node.querySelector('figcaption');
+    const captionText = caption ? caption.textContent.trim() : '';
+    if (captionText) return `\n\n![${alt}](${src})\n*${captionText}*\n\n`;
+    return `\n\n![${alt}](${src})\n\n`;
+  },
+});
+```
+
 ### GenerateBlocks / page builder wrappers
 
 **Problem:** Page builders add deeply nested `<div>` wrappers that create noise in markdown.
