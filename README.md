@@ -1,6 +1,10 @@
 # WordPress to Astro Migration Skill
 
-A Claude Code skill for migrating WordPress blogs to Astro static sites. Built from real migrations across multiple sites — a bilingual podcast/blog (angiecreates.io) and a consulting content site (strategyu.co).
+A Claude Code skill for migrating WordPress blogs to Astro static sites. Built from real migrations across multiple sites — a bilingual podcast/blog ([angiecreates.io](https://angiecreates.io)) and a consulting content site ([strategyu.co](https://strategyu.co)).
+
+| [strategyu.co](https://strategyu.co) | [angiecreates.io](https://angiecreates.io) |
+|---|---|
+| ![StrategyU — consulting skills site on Vercel](images/strategyu-screenshot.png) | ![Angie Creates — bilingual podcast/blog on Cloudflare Pages](images/angiecreates-screenshot.png) |
 
 ## What This Skill Does
 
