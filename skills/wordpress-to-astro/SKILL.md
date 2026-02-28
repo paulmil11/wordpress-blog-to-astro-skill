@@ -71,13 +71,17 @@ node scripts/add-podcast-embeds.mjs          # inject players
 
 Auto-generate landing pages for content that exists in external feeds (e.g., podcast RSS) but has no blog post. Match episodes by number, inject embed players.
 
-### Phase 6: Build & Deploy
+### Phase 6: Build, Redirects & Deploy
 
 ```bash
 npm run build  # outputs to dist/
 ```
 
-Verify build succeeds, check for broken links and missing images. Configure redirects for old WordPress URLs (platform-specific: `_redirects` for Netlify/Cloudflare, `vercel.json` for Vercel).
+Verify build succeeds, check for broken links and missing images.
+
+**Redirects** — Critical for preserving SEO. Generate a redirect map from old WordPress URLs (e.g., `/2024/01/slug/` or `/blog/slug/`) to new Astro URLs (`/slug`). Don't forget `/feed/` → `/rss.xml` and `/wp-admin` → `/`. See `post-migration-patterns.md` section 11 for the full redirect generation script and platform-specific formats.
+
+**Deploy** — Both Vercel and Cloudflare Pages are free for static sites (unlimited bandwidth, custom domains, automatic HTTPS, global CDN). See `post-migration-patterns.md` sections 12-13 for step-by-step deploy guides for each platform.
 
 ## Key Architecture Decisions
 

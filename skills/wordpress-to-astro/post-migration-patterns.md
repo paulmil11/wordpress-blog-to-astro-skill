@@ -463,3 +463,293 @@ Place in `public/robots.txt`. The `/_astro/` path contains Astro's hashed static
 ```
 
 Add `dns-prefetch` (and `preconnect` for critical ones) for any third-party domains your analytics, email, or ad scripts load from. This shaves 50-100ms off their first request.
+
+## 10. Cross-Linking & Internal SEO
+
+WordPress sites often have weak internal linking. Migration is a good time to fix that.
+
+### Automated "Related Posts" by category
+
+See section 4 above. This is the minimum — every post should link to 2-3 others.
+
+### In-content contextual links
+
+Write a script to scan all posts and insert links where one post mentions another's topic:
+
+```javascript
+// scripts/cross-link-posts.mjs
+// Scan posts for mentions of other post titles/keywords, suggest internal links
+import { readFileSync, readdirSync } from 'fs';
+import path from 'path';
+
+const POSTS_DIR = 'src/content/posts';
+const files = readdirSync(POSTS_DIR).filter(f => f.endsWith('.md'));
+
+// Build lookup: keyword → slug
+const posts = files.map(f => {
+  const content = readFileSync(path.join(POSTS_DIR, f), 'utf8');
+  const titleMatch = content.match(/^title:\s*"(.+)"/m);
+  const title = titleMatch ? titleMatch[1] : '';
+  const slug = f.replace('.md', '');
+  return { slug, title, file: f };
+});
+
+// For each post, find mentions of other post titles
+for (const post of posts) {
+  const content = readFileSync(path.join(POSTS_DIR, post.file), 'utf8');
+  const body = content.split('---').slice(2).join('---'); // skip frontmatter
+
+  for (const other of posts) {
+    if (other.slug === post.slug) continue;
+    // Check if body mentions the other post's key terms but doesn't already link to it
+    const alreadyLinked = body.includes(`/${other.slug}`);
+    const mentioned = body.toLowerCase().includes(other.title.toLowerCase().split(':')[0].trim());
+    if (mentioned && !alreadyLinked) {
+      console.log(`${post.slug} mentions "${other.title}" but doesn't link to /${other.slug}`);
+    }
+  }
+}
+```
+
+Run this after migration to find cross-linking opportunities. Add links manually — automated insertion is too risky for quality.
+
+### Other cross-linking strategies
+
+- **"See also" blocks**: Add a short list at the end of sections that reference related posts. More targeted than the generic related posts grid.
+- **Pillar/cluster model**: Pick 3-5 pillar topics. Each pillar page links to all posts in that cluster. Each cluster post links back to the pillar. Good for SEO topical authority.
+- **Category index pages**: Build `/blog/category/[category].astro` pages that list all posts in a category. Gives Google a crawl path and users a browse path.
+- **Breadcrumbs**: Add `Home > Blog > Category > Post Title` breadcrumbs. Helps both navigation and structured data (Google shows them in search results).
+- **Previous/Next navigation**: Add chronological prev/next links at the bottom of each post. Keeps readers moving through the archive.
+
+### SEO quick wins post-migration
+
+- **Submit sitemap to Google Search Console**: `https://example.com/sitemap-index.xml` — do this immediately after launch.
+- **Check for broken internal links**: Run `npx broken-link-checker https://example.com --recursive` after deploy.
+- **Add `alt` text to all images**: WordPress exports often have empty alt tags. Scan for `![](` (empty alt) and fix.
+- **Description meta for every post**: If WordPress excerpts were empty, generate descriptions from the first 1-2 sentences.
+- **Canonical URLs**: Already handled in the Layout.astro pattern (section 1). Critical if old WordPress URLs are still live during transition.
+- **JSON-LD Article schema**: For blog posts, add Article structured data beyond the Organization schema:
+
+```astro
+{type === 'article' && (
+  <script type="application/ld+json" set:html={JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": title,
+    "description": description,
+    "image": imageURL,
+    "datePublished": publishedDate,
+    "dateModified": modifiedDate || publishedDate,
+    "author": { "@type": "Person", "name": author },
+    "publisher": {
+      "@type": "Organization",
+      "name": "Site Name",
+      "logo": { "@type": "ImageObject", "url": "https://example.com/logo.png" }
+    },
+    "mainEntityOfPage": canonicalURL,
+  })} />
+)}
+```
+
+## 11. Redirects from Old WordPress URLs
+
+This is critical. Without redirects, you lose all SEO juice from existing Google rankings and inbound links. Set up redirects **before** pointing the domain to the new host.
+
+### Generating the redirect map
+
+WordPress URLs typically follow patterns like `/2024/01/post-slug/` or `/blog/post-slug/`. Astro URLs are usually `/post-slug`. Write a script to generate the mapping:
+
+```javascript
+// scripts/generate-redirects.mjs
+import { readFileSync, writeFileSync, readdirSync } from 'fs';
+import path from 'path';
+
+const POSTS_DIR = 'src/content/posts';
+const files = readdirSync(POSTS_DIR).filter(f => f.endsWith('.md'));
+
+const redirects = [];
+
+for (const file of files) {
+  const content = readFileSync(path.join(POSTS_DIR, file), 'utf8');
+  const slug = file.replace('.md', '');
+  const rawDateMatch = content.match(/^rawDate:\s*"(\d{4})-(\d{2})/m);
+
+  // WordPress date-based permalink: /YYYY/MM/slug/
+  if (rawDateMatch) {
+    const [, year, month] = rawDateMatch;
+    redirects.push({ from: `/${year}/${month}/${slug}/`, to: `/${slug}` });
+  }
+
+  // WordPress /blog/slug/ pattern
+  redirects.push({ from: `/blog/${slug}/`, to: `/${slug}` });
+
+  // Trailing slash variant
+  redirects.push({ from: `/${slug}/`, to: `/${slug}` });
+}
+
+// Also redirect common WordPress paths
+redirects.push({ from: '/feed/', to: '/rss.xml' });
+redirects.push({ from: '/feed/atom/', to: '/rss.xml' });
+redirects.push({ from: '/wp-login.php', to: '/' });
+redirects.push({ from: '/wp-admin', to: '/' });
+redirects.push({ from: '/wp-admin/*', to: '/' });
+
+console.log(`Generated ${redirects.length} redirects`);
+```
+
+### Option A: Vercel (`vercel.json`)
+
+```json
+{
+  "redirects": [
+    { "source": "/2024/01/my-post/", "destination": "/my-post", "permanent": true },
+    { "source": "/blog/:slug/", "destination": "/:slug", "permanent": true },
+    { "source": "/feed/(.*)", "destination": "/rss.xml", "permanent": true }
+  ]
+}
+```
+
+Vercel supports wildcard `:slug` and regex `(.*)` patterns, so you can often cover everything with a few rules rather than listing every post. `permanent: true` sends a 301.
+
+### Option B: Cloudflare Pages (`public/_redirects`)
+
+```
+/2024/01/my-post/ /my-post 301
+/blog/:slug /slug 301
+/feed/* /rss.xml 301
+/wp-login.php / 301
+/wp-admin/* / 301
+```
+
+Place in `public/_redirects` — gets copied to `dist/` at build time. Cloudflare Pages supports `:splat` and `:slug` placeholders. One redirect per line: `from to status`.
+
+### Option C: Netlify (`public/_redirects`)
+
+Same format as Cloudflare Pages. Netlify also supports a `netlify.toml` alternative:
+
+```toml
+[[redirects]]
+  from = "/blog/:slug/"
+  to = "/:slug"
+  status = 301
+```
+
+### Option D: DNS-level redirects (for domain changes)
+
+If moving from `olddomain.com` to `newdomain.com`, you need the old domain to redirect too. Options:
+- **Cloudflare**: Add old domain, use Page Rules or Bulk Redirects to send everything to `https://newdomain.com/$1`
+- **Vercel**: Add old domain as an alias, it auto-redirects to the primary domain
+- **Simple redirect service**: Services like redirect.pizza handle this if you just need domain-level forwarding
+
+### Testing redirects
+
+After deploy, verify redirects work:
+
+```bash
+# Spot-check a few URLs
+curl -sI https://example.com/2024/01/old-post-slug/ | grep -i location
+curl -sI https://example.com/blog/old-post-slug/ | grep -i location
+curl -sI https://example.com/feed/ | grep -i location
+
+# Bulk check from a file of old URLs
+while read url; do
+  status=$(curl -sI "$url" | head -1 | awk '{print $2}')
+  echo "$status $url"
+done < old-urls.txt
+```
+
+## 12. Deploying to Vercel (Free)
+
+Vercel's free Hobby plan includes unlimited static sites, custom domains, automatic HTTPS, global CDN, and preview deploys for every git push. More than enough for a migrated blog.
+
+### Steps
+
+1. **Push your repo to GitHub** (or GitLab/Bitbucket).
+
+2. **Sign up at vercel.com** using your GitHub account.
+
+3. **Import your repo**: Click "Add New Project" → select your repo. Vercel auto-detects Astro.
+
+4. **Configure build settings** (usually auto-detected):
+   - Framework Preset: Astro
+   - Build Command: `npm run build`
+   - Output Directory: `dist`
+
+5. **Deploy**: Click "Deploy". First build takes 1-2 minutes.
+
+6. **Add custom domain**: Go to Project Settings → Domains. Add your domain. Vercel gives you DNS records to add at your registrar (either an A record or CNAME). HTTPS is automatic.
+
+7. **Add redirects**: Create `vercel.json` in project root with your redirect rules (see section 11).
+
+### What you get for free
+
+- Unlimited bandwidth for static sites
+- Automatic deploys from git push
+- Preview URLs for every branch/PR
+- Global CDN (edge network)
+- Free SSL/HTTPS
+- Serverless Functions (100GB-hours/month) if you ever need them
+- Web analytics (basic, free tier)
+
+### vercel.json minimal config
+
+```json
+{
+  "redirects": [
+    { "source": "/blog/:slug/", "destination": "/:slug", "permanent": true },
+    { "source": "/feed/(.*)", "destination": "/rss.xml", "permanent": true }
+  ]
+}
+```
+
+## 13. Deploying to Cloudflare Pages (Free)
+
+Cloudflare Pages free tier is also genuinely free for static sites — unlimited bandwidth, unlimited requests, 500 builds/month, custom domains, automatic HTTPS.
+
+### Steps
+
+1. **Push your repo to GitHub** (or GitLab).
+
+2. **Sign up at dash.cloudflare.com** (free account).
+
+3. **Create a Pages project**: Go to Workers & Pages → Create → Pages → Connect to Git.
+
+4. **Select your repo and configure**:
+   - Production branch: `main`
+   - Framework preset: Astro
+   - Build command: `npm run build`
+   - Build output directory: `dist`
+
+5. **Deploy**: Click "Save and Deploy". First build takes 2-3 minutes.
+
+6. **Add custom domain**: Go to your Pages project → Custom domains → Set up a domain. If your domain is already on Cloudflare DNS, it auto-configures. Otherwise, add the CNAME record they provide.
+
+7. **Add redirects**: Create `public/_redirects` with your redirect rules (see section 11).
+
+**Important**: Use Cloudflare **Pages**, not Workers. A static Astro site doesn't need the `@astrojs/cloudflare` adapter or `wrangler deploy`. Those are for server-rendered Astro. Pages is simpler and correct for static output.
+
+### What you get for free
+
+- Unlimited bandwidth (no caps)
+- Unlimited requests
+- 500 builds per month
+- Global CDN (Cloudflare's edge network — 300+ cities)
+- Free SSL/HTTPS
+- Preview deploys for every branch
+- Web analytics (free, privacy-focused)
+- If domain is on Cloudflare: free DDoS protection, caching rules, page rules
+
+### Cloudflare vs Vercel — which to pick
+
+| | Vercel | Cloudflare Pages |
+|---|---|---|
+| **Bandwidth** | Unlimited (static) | Unlimited |
+| **Builds** | 6000/month | 500/month |
+| **CDN** | Fast, global | Fast, global (slightly more PoPs) |
+| **Custom domains** | Easy | Easy (best if DNS already on Cloudflare) |
+| **Redirects** | `vercel.json` (supports regex) | `_redirects` file (simpler syntax) |
+| **Preview deploys** | Yes | Yes |
+| **Serverless** | Yes (free tier) | Yes (Workers, free tier) |
+| **Best for** | Quick setup, Vercel ecosystem | Sites already on Cloudflare DNS |
+
+Both are genuinely free for static sites. Pick based on where your DNS lives or personal preference.

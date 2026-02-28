@@ -94,6 +94,10 @@ Patterns for building out the Astro site after content is migrated:
 - **Dynamic Routes with Draft Filtering** — `[slug].astro` pattern with dev-only draft visibility
 - **robots.txt** — Template for Astro static sites with sitemap reference
 - **DNS Prefetch** — Performance optimization for third-party scripts
+- **Cross-Linking & Internal SEO** — Automated cross-link detection script, pillar/cluster model, category index pages, breadcrumbs, Article JSON-LD schema, and post-migration SEO checklist
+- **Redirects from Old WordPress URLs** — Full redirect generation script plus platform-specific configs (Vercel, Cloudflare Pages, Netlify, DNS-level) with testing commands
+- **Deploying to Vercel (Free)** — Step-by-step deploy guide, what you get on the free tier
+- **Deploying to Cloudflare Pages (Free)** — Step-by-step deploy guide, free tier details, comparison table vs Vercel
 
 ### `common-issues.md` — Troubleshooting Guide
 Solutions for problems we actually hit:
@@ -110,13 +114,28 @@ Solutions for problems we actually hit:
 - **MDX parsing failures** — Why plain markdown wins for WordPress content
 - **Content collection validation** — Making Zod schemas forgiving enough for messy WordPress data
 
+## What This Skill Does NOT Handle
+
+### Email
+
+This migration covers your website only — it does not migrate email. If you're using WordPress-hosted email (e.g., `you@yourdomain.com` through your WordPress hosting provider), **you may need to keep your WordPress hosting account active** for email, or migrate email separately to:
+
+- **Google Workspace** ($7/mo per user)
+- **Zoho Mail** (free for up to 5 users)
+- **Fastmail**, **Proton Mail**, or **iCloud+ Custom Domains**
+- **Your domain registrar** — many (Cloudflare, Namecheap, Porkbun) offer email forwarding for free
+
+If your email is already on a separate provider (Gmail, Outlook, etc.), you're fine — just update DNS records when you point the domain to Vercel/Cloudflare.
+
+Check your current MX records (`dig MX yourdomain.com`) before canceling WordPress hosting to make sure you won't lose email.
+
 ## Real-World Results
 
 This skill was built from:
 
-- **angiecreates.io** — 84 blog posts + 80 podcast episodes, bilingual Chinese/English, Transistor.fm integration, Cloudflare Pages deployment. Special challenges: RSS-based episode generation, multilingual boilerplate removal, jammed URL fixes.
+- **[angiecreates.io](https://angiecreates.io)** — 84 blog posts + 80 podcast episodes, bilingual Chinese/English, Transistor.fm integration, Cloudflare Pages deployment. Special challenges: RSS-based episode generation, multilingual boilerplate removal, jammed URL fixes.
 
-- **strategyu.co** — 59 consulting articles, Vercel deployment, dynamic SVG featured images, YouTube/Vimeo embed preservation, ConvertKit integration.
+- **[strategyu.co](https://strategyu.co)** — 59 consulting articles, Vercel deployment, dynamic SVG featured images, YouTube/Vimeo embed preservation, ConvertKit integration.
 
 ## Contributing
 
