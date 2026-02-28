@@ -14,6 +14,18 @@ Invoke with `/wordpress-to-astro` when:
 
 Run these phases in order. Each phase is idempotent — safe to re-run.
 
+### Phase 0: Export from WordPress
+
+Get the XML export file from the WordPress admin:
+
+- **Self-hosted WordPress**: Go to **Tools → Export** (`/wp-admin/export.php`). Select "Posts" (or "All content" if you want pages too). Click "Download Export File". You'll get a `.xml` file.
+- **WordPress.com**: Go to **Settings → General → Export** or navigate to `https://your-site.wordpress.com/wp-admin/export.php`. Same flow — select content type, download the XML.
+- **WP Engine / Managed hosts**: Same Tools → Export path. Some managed hosts also offer database exports, but the XML export is what the migration scripts expect.
+
+The export file contains all posts, pages, categories, tags, comments, custom fields, and media attachment metadata. It does NOT contain the actual image files — those get downloaded in Phase 3.
+
+If the site has many posts (500+), WordPress may split the export into multiple XML files. Process each one separately or concatenate them.
+
 ### Phase 1: Extract (WordPress XML → JSON)
 
 ```bash
