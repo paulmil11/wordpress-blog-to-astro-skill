@@ -1,14 +1,14 @@
 # WordPress to Astro Migration Skill
 
-A Claude Code skill for migrating WordPress blogs to Astro static sites. Built from real migrations across multiple sites — a bilingual podcast/blog ([angiecreates.io](https://angiecreates.io)) and a consulting content site ([strategyu.co](https://strategyu.co)).
+A Claude Code skill for migrating WordPress blogs to Astro static sites. Built from real migrations across multiple sites — a personal blog with 180+ posts ([pmillerd.com](https://pmillerd.com)), a bilingual podcast/blog ([angiecreates.io](https://angiecreates.io)), and a consulting content site ([strategyu.co](https://strategyu.co)).
 
-| [strategyu.co](https://strategyu.co) | [angiecreates.io](https://angiecreates.io) |
-|---|---|
-| ![StrategyU — consulting skills site on Vercel](images/strategyu-screenshot.png) | ![Angie Creates — bilingual podcast/blog on Cloudflare Pages](images/angiecreates-screenshot.png) |
+| [pmillerd.com](https://pmillerd.com) | [strategyu.co](https://strategyu.co) | [angiecreates.io](https://angiecreates.io) |
+|---|---|---|
+| ![pmillerd.com — personal blog migrated from WordPress](images/pmillerd-screenshot.png) | ![StrategyU — consulting skills site on Vercel](images/strategyu-screenshot.png) | ![Angie Creates — bilingual podcast/blog on Cloudflare Pages](images/angiecreates-screenshot.png) |
 
 ## What This Skill Does
 
-When you invoke `/wordpress-to-astro` in any project, Claude gets loaded with the full migration playbook: a 6-phase pipeline, ready-to-customize script templates, and a troubleshooting guide covering dozens of real issues.
+When you invoke `/wordpress-to-astro` in any project, Claude gets loaded with the full migration playbook: a 7-phase pipeline, ready-to-customize script templates, and a troubleshooting guide covering dozens of real issues.
 
 Claude will walk you through the migration step by step, asking the right questions upfront and adapting scripts to your specific site.
 
@@ -18,7 +18,7 @@ Personal (just you):
 ```bash
 # Copy skill files to your local Claude skills directory
 mkdir -p ~/.claude/skills/wordpress-to-astro
-# Then copy SKILL.md, migration-scripts.md, common-issues.md into it
+# Then copy SKILL.md, migration-scripts.md, common-issues.md, post-migration-patterns.md into it
 ```
 
 As a plugin (shareable):
@@ -30,7 +30,7 @@ As a plugin (shareable):
 
 ### The Migration Pipeline
 
-The skill guides Claude through 6 phases, run in order:
+The skill guides Claude through 7 phases, run in order:
 
 1. **Extract** — Parse your WordPress XML export into structured JSON. Pulls out titles, slugs, dates, categories, tags, featured images (via `_thumbnail_id` postmeta lookup), and full HTML content.
 
@@ -38,11 +38,13 @@ The skill guides Claude through 6 phases, run in order:
 
 3. **Download Images** — Scan all markdown for external image URLs, download them locally to `public/images/posts/`, and rewrite all references. Handles CDN redirects (up to 5 hops), tracks failures, and is idempotent (safe to re-run).
 
-4. **Clean Up** — Remove boilerplate (host social links, platform CTAs, subscription prompts) while intelligently preserving guest content. Standardize categories. Fix broken links from old domains. Normalize percent-encoded CJK filenames.
+4. **Clean Up** — Remove boilerplate (host social links, platform CTAs, subscription prompts) while intelligently preserving guest content. Standardize categories. Fix broken links from old domains. Normalize percent-encoded CJK filenames. Fix protocol-relative URLs in embeds. Convert bare Twitter/X URLs to markdown links.
 
 5. **Generate Missing Content** — Auto-create landing pages for content that exists in external feeds (podcast RSS, newsletters) but has no blog post yet. Match by episode number, inject embed players.
 
-6. **Build & Deploy** — Verify the Astro build, configure platform-specific redirects (Netlify `_redirects`, Vercel `vercel.json`, Cloudflare Pages), and deploy.
+6. **Build & Deploy** — Verify the Astro build, configure platform-specific redirects (Netlify `_redirects`, Vercel `vercel.json`, Cloudflare Pages), and deploy. For domain migrations, generate WordPress Redirection plugin CSV for the old site.
+
+7. **Post-Migration Polish** — Fix remaining broken internal links, build standalone pages from old site content (coaching, reading lists, tools pages), implement dark mode, add blog page features (category filtering, search, sort by reading time), visual polish (gradient transitions, responsive layouts).
 
 ### What Claude Asks You First
 
@@ -57,6 +59,8 @@ Before writing any code, the skill prompts Claude to ask about your specific set
 | **Old domain** — Need redirects from old URLs? | Creates redirect mapping from WordPress slugs |
 | **External feeds** — Podcast RSS? Newsletter? | Enables auto-generation of missing content pages |
 | **Embeds** — YouTube, podcast players, Instagram, Substack? | Configures Turndown custom rules to preserve specific embed types |
+| **Dark mode** — Light/dark theme toggle? | CSS custom properties + `[data-theme]` attribute approach |
+| **Blog features** — Category filtering, search, sort, stats? | Inline JS on blog index page |
 
 ### Key Architecture Decisions
 
@@ -68,11 +72,12 @@ The skill encodes opinions that come from doing this multiple times:
 - **GitHub as CMS** — Edit markdown directly, version control built in
 - **Single `[slug].astro` route** — One template for all posts, zero duplication
 - **Dual date fields** — `date` for human-readable display, `rawDate` for reliable sorting
+- **Never edit the author's content** — Only fix structural issues (links, embeds, frontmatter). Preserve exact words.
 
 ## What's Included
 
 ### `SKILL.md` — Main Migration Guide
-The core skill file. Contains the 6-phase pipeline, project structure template, content collection schema, dependency list, architecture decisions, and customization points. This is what Claude reads when you invoke the skill.
+The core skill file. Contains the 7-phase pipeline, project structure template, content collection schema, dependency list, architecture decisions, and customization points. This is what Claude reads when you invoke the skill.
 
 ### `migration-scripts.md` — Script Templates
 Ready-to-customize code for every phase:
@@ -102,6 +107,11 @@ Patterns for building out the Astro site after content is migrated:
 - **Redirects from Old WordPress URLs** — Full redirect generation script plus platform-specific configs (Vercel, Cloudflare Pages, Netlify, DNS-level) with testing commands
 - **Deploying to Vercel (Free)** — Step-by-step deploy guide, what you get on the free tier
 - **Deploying to Cloudflare Pages (Free)** — Step-by-step deploy guide, free tier details, comparison table vs Vercel
+- **WordPress Redirection Plugin CSV** — Generate CSV import files for domain migrations with cross-checking guide
+- **Dark Mode** — CSS custom properties with `[data-theme="dark"]` toggle, localStorage persistence, Astro scoped style patterns
+- **Interactive Blog Index** — Category filtering, search, sort by reading time, show more pagination, random post, blog stats
+- **Building Standalone Pages** — Recreating non-blog pages from old site content with responsive embeds
+- **Content Integrity Rule** — Never shorten or paraphrase the author's original content
 
 ### `common-issues.md` — Troubleshooting Guide
 Solutions for problems we actually hit:
@@ -117,6 +127,12 @@ Solutions for problems we actually hit:
 - **Cloudflare Pages vs Workers** — Why `npx wrangler deploy` fails for static sites and what to use instead
 - **MDX parsing failures** — Why plain markdown wins for WordPress content
 - **Content collection validation** — Making Zod schemas forgiving enough for messy WordPress data
+- **Protocol-relative URLs** — `//www.youtube.com` and `//www.slideshare.net` breaking in embeds
+- **Bare Twitter/X URLs** — Converting standalone URLs to proper markdown links
+- **Internal links to old domain** — Systematic audit and fix approach for broken internal links
+- **Responsive YouTube embeds** — CSS `:has()` selector pattern for wrapping iframes
+- **Stale build output** — Why `dist/` may not reflect recent changes without a fresh build
+- **WordPress Redirection plugin quirks** — Missing regex option, CSV format, category path differences
 
 ## What This Skill Does NOT Handle
 
@@ -136,6 +152,8 @@ Check your current MX records (`dig MX yourdomain.com`) before canceling WordPre
 ## Real-World Results
 
 This skill was built from:
+
+- **[pmillerd.com](https://pmillerd.com)** — 180 blog posts + 10 standalone pages, domain migration from think-boundless.com, dark mode, interactive blog with category filtering/search/sort, WordPress Redirection plugin CSV for 500+ redirects, Tailwind CSS v4, reading library page with 55+ books. Special challenges: internal link audit across 180 posts, building standalone pages from old site content via WebFetch, responsive YouTube embed cleanup, protocol-relative URL fixes.
 
 - **[angiecreates.io](https://angiecreates.io)** — 84 blog posts + 80 podcast episodes, bilingual Chinese/English, Transistor.fm integration, Cloudflare Pages deployment. Special challenges: RSS-based episode generation, multilingual boilerplate removal, jammed URL fixes.
 

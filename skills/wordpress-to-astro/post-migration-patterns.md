@@ -753,3 +753,150 @@ Cloudflare Pages free tier is also genuinely free for static sites — unlimited
 | **Best for** | Quick setup, Vercel ecosystem | Sites already on Cloudflare DNS |
 
 Both are genuinely free for static sites. Pick based on where your DNS lives or personal preference.
+
+## 14. WordPress Redirection Plugin CSV (Domain Migrations)
+
+When migrating from olddomain.com to newdomain.com, generate a CSV the user can import into the WordPress Redirection plugin on the OLD site:
+
+```csv
+source,target,regex,type,code,match,group
+"/old-slug/","https://newdomain.com/old-slug/",0,url,301,url,Redirections
+```
+
+### What to include
+
+1. **All blog post slugs** — Map each `/{slug}/` to `https://newdomain.com/{slug}/`
+2. **Special pages** — about, books, coaching, tools, blog, etc.
+3. **Homepage** — `/` → `https://newdomain.com/`
+4. **Category pages** — `/category/{slug}/` → `https://newdomain.com/categories/{slug}/` (note the path difference!)
+5. **RSS feed** — `/feed/` → `https://newdomain.com/rss.xml`
+6. **Old slug redirects** — If the old site already had redirects (e.g., renamed posts), update their targets too
+
+### Cross-checking the redirect file
+
+After generating, verify completeness:
+- Count of blog post redirects matches total posts
+- All special pages covered
+- All categories covered
+- Check for self-redirects (still pointing to old domain instead of new)
+- Check for relative URLs missing `https://` prefix
+- Check for disabled redirects that should be enabled
+
+### WordPress Redirection plugin tips
+
+- Import via Tools → Import/Export in the Redirection plugin settings
+- Specific rules take priority over regex rules
+- If the plugin version doesn't show a regex checkbox, just use explicit rules for everything
+- 200-500 explicit redirect rules import and perform fine
+
+## 15. Dark Mode with CSS Custom Properties
+
+Implement dark mode via a `[data-theme="dark"]` attribute on `<html>`:
+
+```css
+/* Light mode defaults */
+:root {
+  --color-white: #FAFAF8;
+  --color-mist: #F0F4F7;
+  --color-ink: #1a1a1a;
+  --color-ink-light: #6b7280;
+  --color-gold: #3D5A80;
+  --color-blue: #5B7B9A;
+}
+
+/* Dark mode overrides */
+[data-theme="dark"] {
+  --color-dark-bg: #1a1a2e;
+  --color-dark-surface: #25253e;
+  --color-dark-text: #e2e8f0;
+  --color-dark-text-muted: #94a3b8;
+  --color-dark-gold: #3BB5A7;
+}
+```
+
+In Astro scoped styles, target dark mode with `:global([data-theme="dark"])`:
+
+```css
+.my-component { color: var(--color-ink); }
+:global([data-theme="dark"]) .my-component { color: var(--color-dark-text); }
+```
+
+Toggle in header with localStorage persistence:
+
+```html
+<button id="theme-toggle" aria-label="Toggle dark mode">☀️</button>
+<script is:inline>
+  const toggle = document.getElementById('theme-toggle');
+  const saved = localStorage.getItem('theme');
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
+  toggle?.addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+  });
+</script>
+```
+
+## 16. Interactive Blog Index Page
+
+Build a blog page with inline filtering, search, sort, and stats — all client-side JS, no page reloads:
+
+### Features
+- **Category filter buttons** — `<button>` elements with `data-category` attributes, not links. Clicking filters posts inline.
+- **Search** — Text input that filters by post title in real-time.
+- **Sort by reading time** — Longest/shortest toggles that re-order posts flat (hides year groups).
+- **Show more** — Initially show 50 posts, "Show more" button loads 50 more.
+- **"I'm feeling pathless"** — Random post button that navigates to a random slug.
+- **Blog stats** — Post count, word count, reading days, years writing.
+
+### Architecture
+- All posts rendered server-side with `data-categories`, `data-title`, `data-reading-time` attributes.
+- Posts grouped by year in `<div class="year-group" data-year="2024">` containers.
+- Filtering/sorting done entirely in client JS — no API calls.
+- Sort mode clones matching rows into a flat `#sorted-container`, hides year groups.
+
+### Key pattern: `<script is:inline define:vars={{ allSlugs, INITIAL_SHOW }}>`
+
+Use Astro's `define:vars` to pass server data (slug list, initial count) to client script without a separate JSON endpoint.
+
+## 17. Building Standalone Pages from Old Site Content
+
+When the old WordPress site had non-blog pages (coaching, reading lists, tools, etc.), rebuild them as clean Astro pages:
+
+1. **WebFetch the old page** to get content and structure
+2. **Download hero images** to `public/images/`
+3. **Build `.astro` page** with the content — use the user's exact words, don't paraphrase
+4. **Add responsive embeds** (YouTube iframes with 16:9 aspect ratio wrapper)
+5. **Cross-link** to related blog posts using correct slugs
+6. **Add to navigation** (header nav, footer links) as appropriate
+
+### Pattern for responsive YouTube embeds on standalone pages:
+
+```css
+.video-wrap {
+  position: relative;
+  padding-bottom: 56.25%;
+  height: 0;
+  overflow: hidden;
+  max-width: 720px;
+  margin: 2rem auto;
+  border-radius: 12px;
+}
+.video-wrap iframe {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  border: none;
+}
+```
+
+## 18. Content Integrity Rule
+
+**CRITICAL**: When working with a user's blog content, NEVER shorten, paraphrase, summarize, or edit the author's original words. This applies to:
+- Blog post body text
+- Book descriptions and reviews
+- Page copy the user provides
+- Quotes and blockquotes
+
+Only modify structural elements: frontmatter, links, embeds, categories, formatting. If the user provides text, use it verbatim.

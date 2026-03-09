@@ -210,3 +210,91 @@ turndown.addRule('figure', {
 **Problem:** Zod schema rejects posts with missing required fields.
 
 **Solution:** Make most fields optional with defaults. Only `title` and `date` should be required. Use `.default()` for author, `.optional()` for everything else.
+
+## Embed & URL Cleanup (Post-Migration)
+
+### Protocol-relative URLs in embeds
+
+**Problem:** Some WordPress embeds use protocol-relative URLs (`//www.youtube.com/embed/...` or `//www.slideshare.net/...`) which break when served from `file://` or don't render in some browsers.
+
+**Solution:** Scan all markdown for `//www.` patterns in `src=` attributes and `href=` attributes. Replace with `https://www.`:
+```bash
+grep -rn '//www\.' src/content/blog/ | grep -v 'https://'
+```
+Fix each occurrence — usually in `<iframe src="//..."` and `<a href="//..."`.
+
+### Bare Twitter/X URLs in blog content
+
+**Problem:** WordPress content often contains bare Twitter URLs without markdown link formatting: `https://twitter.com/user/status/123456` sitting alone on a line or inline.
+
+**Solution:** Convert bare Twitter URLs to markdown links. Use the tweet author's handle as the link text:
+```
+https://twitter.com/paulmmillerd/status/123456
+→ [Paul Millerd on Twitter](https://twitter.com/paulmmillerd/status/123456)
+```
+Search with: `grep -rn 'https://twitter.com/' src/content/blog/ | grep -v '\[.*\](https://twitter'`
+
+### Internal links pointing to old domain
+
+**Problem:** After migrating from olddomain.com to newdomain.com, blog posts still contain internal links like `[link text](/old-page/)` or `[link text](https://olddomain.com/page/)` that point to content that no longer exists at those paths.
+
+**Solution:** Systematic audit approach:
+1. Grep all markdown for links to the old domain and relative internal links
+2. Categorize each: (a) redirect to new domain equivalent, (b) redirect to external domain (e.g., podcast moved to separate site), (c) kill the link (keep text, remove `[text](url)` wrapper), (d) build a new page for it
+3. Fix in batches — links to same destination can be done in parallel
+4. For links to pages you need to build: use WebFetch to pull content from old site, then create clean Astro pages
+
+### Responsive YouTube embed wrappers
+
+**Problem:** YouTube iframes in migrated content render at fixed sizes or break on mobile. WordPress used `wp-block-embed__wrapper` divs that don't translate.
+
+**Solution:** Use CSS `:has()` selector to target divs containing YouTube iframes:
+```css
+.post-content :global(div:has(> iframe[src*="youtube"])) {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  margin: 2.5rem auto;
+  padding-bottom: 56.25%; /* 16:9 */
+  height: 0;
+  overflow: hidden;
+}
+.post-content :global(div:has(> iframe[src*="youtube"]) iframe) {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  border: none;
+}
+```
+This catches both WordPress-wrapped and bare `<div><iframe>` patterns.
+
+### Stale build output (dist/ folder)
+
+**Problem:** After creating new pages or making changes, checking `dist/` shows the page missing or old content. The dev server at localhost:4321 also may show stale content.
+
+**Solution:** Always run a fresh `npx astro build` before checking `dist/`. The dev server auto-updates for most changes but occasionally needs a restart for new files. Don't trust stale `dist/` — rebuild.
+
+## WordPress Redirection Plugin (Domain Migrations)
+
+### Generating CSV for WordPress Redirection plugin
+
+**Problem:** When migrating from olddomain.com to newdomain.com, you need the old WordPress site to redirect all URLs to the new domain. The WordPress Redirection plugin accepts CSV imports.
+
+**Solution:** Generate a CSV with this header format:
+```
+source,target,regex,type,code,match,group
+"/old-slug/","https://newdomain.com/old-slug/",0,url,301,url,Redirections
+```
+Include: all blog post slugs, special pages, homepage, category pages (note `/category/slug/` → `/categories/slug/` if path changed), RSS feed (`/feed/` → `/rss.xml`).
+
+### Regex option missing in Redirection plugin
+
+**Problem:** Some versions of the WordPress Redirection plugin don't show a regex checkbox in the UI, even after clicking the gear icon.
+
+**Solution:** Skip regex rules entirely. Generate explicit redirect rules for every URL instead. This is actually more reliable — no risk of regex matching unintended URLs. A CSV with 200-500 explicit rules imports fine.
+
+### Category path differences
+
+**Problem:** WordPress uses `/category/slug/` but Astro generates `/categories/slug/` (or whatever you configured). Redirects need to account for this.
+
+**Solution:** Include explicit category redirects in the CSV: `/category/modern-careers/` → `https://newdomain.com/categories/modern-careers/`. Don't rely on regex for this — list each category explicitly.

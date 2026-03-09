@@ -81,7 +81,31 @@ Verify build succeeds, check for broken links and missing images.
 
 **Redirects** — Critical for preserving SEO. Generate a redirect map from old WordPress URLs (e.g., `/2024/01/slug/` or `/blog/slug/`) to new Astro URLs (`/slug`). Don't forget `/feed/` → `/rss.xml` and `/wp-admin` → `/`. See `post-migration-patterns.md` section 11 for the full redirect generation script and platform-specific formats.
 
+For **domain migrations** (old-domain.com → new-domain.com), also generate a redirect file the user can import into the old site's WordPress Redirection plugin (CSV format). Include blog posts, special pages, categories (`/category/` → `/categories/`), RSS feed, and homepage. See `post-migration-patterns.md` section 14 for the WordPress Redirection plugin CSV format.
+
 **Deploy** — Both Vercel and Cloudflare Pages are free for static sites (unlimited bandwidth, custom domains, automatic HTTPS, global CDN). See `post-migration-patterns.md` sections 12-13 for step-by-step deploy guides for each platform.
+
+### Phase 7: Post-Migration Polish
+
+After the content is migrated and building, there's always a design/polish phase:
+
+1. **Embed cleanup** — Fix protocol-relative URLs (`//www.youtube.com` → `https://www.youtube.com`), malformed iframes, broken embed wrappers. Fix bare URLs that should be markdown links (especially Twitter/X URLs).
+
+2. **Internal link audit** — Scan all posts for internal links pointing to old domains or dead paths. Fix systematically: some become external links to other domains, some get killed (link removed, text kept), some point to new pages you need to build.
+
+3. **Build standalone pages** — Recreate important non-blog pages from the old site (about, coaching, tools, reading lists, etc.). Use WebFetch to pull content from the old site, then build clean Astro pages. Download hero images.
+
+4. **Design testing page** — Create a `/test/` page that renders every component, typography size, color, and layout pattern in one place. Use it to iterate on the design system before building real pages. Remove before launch.
+
+5. **Blog index features** — Build an interactive blog page with: inline JS category filtering (buttons, not links), search, sort by reading time, show more pagination, "I'm feeling lucky" random post button, blog stats (post count, word count, reading time, years writing).
+
+6. **Dark mode** — Implement via CSS custom properties and a `[data-theme="dark"]` attribute on `<html>`. Toggle button in header. Persist preference to localStorage. Redefine all colors in a `[data-theme="dark"]` block.
+
+7. **New categories** — Add new blog categories to posts as needed (YAML array format in frontmatter). Category pages auto-generate via `[category].astro` with slugified names.
+
+8. **Gradient/visual polish** — Smooth section transitions (vertical gradient fades), consistent max-widths across sections, responsive mobile layouts.
+
+**CRITICAL RULE**: Never shorten, paraphrase, or edit the user's original blog content. All content edits must preserve the author's exact words. Only fix structural issues (links, embeds, frontmatter).
 
 ## Key Architecture Decisions
 
@@ -178,7 +202,10 @@ When starting a migration, ask the user about:
 6. **External feeds**: Podcast RSS, newsletter? (auto-generation scripts)
 7. **Embeds**: YouTube, podcast players, Instagram? (Turndown custom rules)
 
+8. **Dark mode**: Does the user want light/dark theme toggle? (CSS custom properties + `[data-theme]` approach)
+9. **Blog features**: Category filtering, search, sort, stats? (inline JS on blog index)
+
 See supporting files for detailed patterns:
 - `migration-scripts.md` — Script templates and implementation details
 - `common-issues.md` — Troubleshooting guide from real migrations
-- `post-migration-patterns.md` — SEO, featured images, CTAs, WordPress CSS compatibility, related posts, newsletter integration
+- `post-migration-patterns.md` — SEO, featured images, CTAs, WordPress CSS compatibility, related posts, newsletter integration, dark mode, blog filtering, domain redirect CSV generation
