@@ -123,19 +123,70 @@ Follow Us:
 
 ## Deployment
 
-### Cloudflare Pages vs Workers
+### Cloudflare Workers
+**Problem:** Old documentation suggests using Cloudflare Pages for static sites, leading to confusion when `npx wrangler deploy` tries to create a Worker.
+**Solution:** Cloudflare now recommends **Workers** as the primary deployment target for both SSG and SSR. 
+1. Run `npx wrangler deploy` in the root.
+2. Wrangler auto-detects Astro and generates a `wrangler.jsonc`.
+3. Static assets are served via the `assets` binding (e.g., `{ "directory": "./dist" }`) at edge speeds without using Worker CPU time unless requested.
 
-**Problem:** Cloudflare's `npx wrangler deploy` command tries to set up a Workers project with `@astrojs/cloudflare` adapter, but a static Astro site doesn't need this.
+### Middleware & "Run Worker First"
+**Problem:** In the old Pages system, Functions (middleware) ran before static assets. In the new Workers system, static assets are served **first**, bypassing your Worker script and breaking authentication or custom redirects.
+**Solution:** If you use middleware, authentication, or custom logic that must intercept asset requests, you must set `run_worker_first` to `true` in `wrangler.jsonc`.
 
-**Solution:** For static sites, use Cloudflare Pages (not Workers). Set build command to `npm run build`, build output directory to `dist`, and leave the deploy command empty. If the deploy command field is required, use `exit 0`.
+
+
+```json
+{
+  "name": "my-astro-site",
+  "compatibility_date": "2024-03-23", 
+  "main": "./dist/_worker.js/index.js",
+  "assets": {
+    "directory": "./dist/client/",
+    "run_worker_first": true
+  }
+}
+```
+## Local Dev with Bindings
+**Problem:** Standard astro dev doesn't see Cloudflare KV, D1, or R2.
+**Solution:** Use the `@astrojs/cloudflare` adapter. Running npx astro dev now utilizes the workerd runtime, giving you full access to production-like bindings locally.
+
+See the Astro Guide for Cloudflare for more information https://docs.astro.build/en/guides/integrations-guide/cloudflare/
 
 ### Vercel redirects
 
 **Pattern:** Use `vercel.json` with `redirects` array. Each entry needs `source`, `destination`, `permanent: true`.
 
-### Netlify/Cloudflare Pages redirects
+### Netlify redirects
 
 **Pattern:** Create `public/_redirects` file with `from to 301` format (one per line). This gets copied to `dist/` at build time.
+
+## Cloudflare Redirects
+
+Astro has a first-class, native routing engine that handles this out of the box. You can define your redirects directly inside your `astro.config.mjs` file.
+
+When you use the `@astrojs/cloudflare` adapter, Astro automatically compiles these rules into the proper edge-compatible logic during your build process.
+
+Here is what your `astro.config.mjs` would look like:
+
+```JavaScript
+import { defineConfig } from 'astro/config';
+import cloudflare from '@astrojs/cloudflare';
+
+export default defineConfig({
+  output: 'server', // or 'hybrid'
+  adapter: cloudflare(),
+  redirects: {
+    '/category/modern-careers/': '/categories/modern-careers/',
+    '/about-us/': '/about/',
+    // You can even set status codes explicitly
+    '/old-blog': {
+      status: 301,
+      destination: '/new-blog'
+    }
+  }
+});
+```
 
 ## WordPress-Specific Gotchas
 
