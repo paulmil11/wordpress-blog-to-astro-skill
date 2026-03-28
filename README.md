@@ -95,6 +95,10 @@ Ready-to-customize code for every phase:
 - **CJK Reading Time** — Counts Chinese characters (~350/min) separately from Latin words (~238/min)
 - **Astro-to-Markdown Converter** — For two-stage migrations where posts were first generated as `.astro` pages then converted to content collections
 
+Optional scripts (not needed for every migration):
+- **Restore Missing Images from XML** — Block-level diffing of current markdown against WordPress XML source to find and re-inject lost image blocks. Fuzzy image name matching, position inference, and legacy server download with redirect following
+- **RSS Feed to Content Stubs** — Generate landing pages for podcast episodes (or newsletter issues) that exist in an RSS feed but don't have blog posts. Entry number matching, duplicate detection, platform-agnostic embed injection
+
 ### `post-migration-patterns.md` — Post-Migration Enhancements
 Patterns for building out the Astro site after content is migrated:
 

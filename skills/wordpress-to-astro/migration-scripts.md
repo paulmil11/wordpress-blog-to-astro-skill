@@ -471,3 +471,421 @@ function isBlogPostFile(filePath) {
 // Use Turndown with all custom rules (see section 2) to convert,
 // then write markdown with frontmatter to src/content/posts/<slug>.md
 ```
+
+---
+
+## Optional Templates
+
+The following scripts are useful for specific migration scenarios but not needed for every project.
+
+## 9. Restore Missing Images from WordPress XML (Optional)
+
+Use when the image download script (section 3) didn't catch everything — images deleted from the media library, served by a reconfigured CDN, or lost during post edits after export. This script reconciles current markdown against the original WordPress XML to find and restore missing image blocks.
+
+Three modes:
+- **Default** — localize remote images (download from old server, rewrite URLs)
+- **`--inject`** — compare source XML body with current markdown, inject missing image blocks in correct position
+- **`--replace-body`** — nuclear option: replace entire body from XML source (preserves frontmatter)
+
+```javascript
+// restore-missing-images.mjs
+// Usage:
+//   node scripts/restore-missing-images.mjs <slug> [slug...]           # localize remote images
+//   node scripts/restore-missing-images.mjs --inject <slug> [slug...]  # inject missing image blocks
+//   node scripts/restore-missing-images.mjs --replace-body <slug>      # replace body from XML
+import fs from 'fs';
+import path from 'path';
+import https from 'https';
+import TurndownService from 'turndown';
+import { XMLParser } from 'fast-xml-parser'; // or xml2js
+
+// CUSTOMIZE: paths and old server details
+const CONTENT_DIR = 'src/content/posts';
+const IMAGES_DIR = 'public/images/posts';
+const XML_FILES = ['export.xml']; // your WordPress XML export(s)
+const OLD_HOST = 'old.yoursite.com'; // legacy subdomain pointing at old server
+const OLD_IP = ''; // optional: old server IP if DNS is gone
+
+// ── XML Parsing ──────────────────────────────────────────────────────────
+
+const parser = new XMLParser({
+  ignoreAttributes: false,
+  cdataPropName: '__cdata',
+  isArray: (name) => ['item', 'wp:postmeta', 'category'].includes(name),
+});
+
+function getCdata(val) {
+  if (!val) return '';
+  if (typeof val === 'string') return val;
+  if (val.__cdata !== undefined) return val.__cdata;
+  return String(val);
+}
+
+// ── Build source body map from XML ───────────────────────────────────────
+
+const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
+// Add your Turndown rules (iframes, figures, etc.) — see section 2
+
+function buildSourceBodyMap() {
+  const map = new Map();
+  for (const xmlPath of XML_FILES) {
+    const data = parser.parse(fs.readFileSync(xmlPath, 'utf8'));
+    const items = data?.rss?.channel?.item || [];
+    for (const item of items) {
+      const slug = getCdata(item['wp:post_name']).trim();
+      const postType = getCdata(item['wp:post_type']);
+      const status = getCdata(item['wp:status']);
+      if (!slug || postType !== 'post' || status !== 'publish') continue;
+      const html = getCdata(item['content:encoded'])
+        .replace(/<!--\s*\/?wp:.*?-->/gs, '');
+      map.set(slug, turndown.turndown(html).trim());
+    }
+  }
+  return map;
+}
+
+// ── Block-level comparison ───────────────────────────────────────────────
+
+function splitBlocks(body) {
+  return body.replace(/\r\n/g, '\n').trim().split(/\n{2,}/);
+}
+
+function isImageBlock(block) {
+  const trimmed = block.trim();
+  if (/^!\[[\s\S]*\]\([^)]+\)$/.test(trimmed)) return true;
+  if (/^\[!\[[\s\S]*\]\([^)]+\)\]\([^)]+\)$/.test(trimmed)) return true;
+  const lines = trimmed.split('\n').map(l => l.trim()).filter(Boolean);
+  return lines.length > 0 && lines.every(l => l.startsWith('<img ') || l.startsWith('!['));
+}
+
+function normalizeBlock(block) {
+  return block.replace(/\s+/g, ' ').trim();
+}
+
+// Fuzzy image name matching — ignore dimensions, dates, -copy suffixes
+function normalizeImageName(value) {
+  let name = path.basename(value).toLowerCase();
+  try { name = decodeURIComponent(name); } catch {}
+  return name
+    .replace(/\.[a-z0-9]+$/i, '')  // strip extension
+    .replace(/-\d+x\d+$/i, '')     // strip WP dimension suffix
+    .replace(/^\d{4}-\d{2}-/, '')   // strip date prefix
+    .replace(/-copy(?:-of)?/gi, '') // strip -copy
+    .replace(/-\d+$/i, '')          // strip trailing number
+    .replace(/[^a-z0-9]+/g, '');    // normalize separators
+}
+
+function extractImageUrls(content) {
+  const urls = new Set();
+  for (const m of content.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)) urls.add(m[1]);
+  for (const m of content.matchAll(/<img[^>]+src="([^"]+)"/gi)) urls.add(m[1]);
+  return [...urls];
+}
+
+// Check if an image block from the source already exists (by normalized name)
+function hasEquivalentImage(block, currentBody) {
+  const sourceNames = extractImageUrls(block).map(normalizeImageName).filter(Boolean);
+  if (!sourceNames.length) return currentBody.includes(block.trim());
+  const currentNames = extractImageUrls(currentBody).map(normalizeImageName);
+  return sourceNames.every(s => currentNames.some(c => s === c || s.includes(c) || c.includes(s)));
+}
+
+// ── Inject missing image blocks ──────────────────────────────────────────
+// Walks source blocks, finds image blocks missing from current content,
+// inserts them next to the nearest matching text block (by content match).
+
+function injectMissingImageBlocks(sourceBody, currentBody) {
+  const sourceBlocks = splitBlocks(sourceBody);
+  const currentBlocks = splitBlocks(currentBody);
+
+  for (let i = 0; i < sourceBlocks.length; i++) {
+    const block = sourceBlocks[i];
+    if (!isImageBlock(block)) continue;
+    if (hasEquivalentImage(block, currentBlocks.join('\n\n'))) continue;
+
+    let inserted = false;
+
+    // Try to insert after the preceding text block
+    for (let j = i - 1; j >= 0; j--) {
+      if (!sourceBlocks[j].trim() || isImageBlock(sourceBlocks[j])) continue;
+      const idx = currentBlocks.findIndex(c => normalizeBlock(c) === normalizeBlock(sourceBlocks[j]));
+      if (idx !== -1) { currentBlocks.splice(idx + 1, 0, block); inserted = true; break; }
+    }
+    if (inserted) continue;
+
+    // Fall back: insert before the following text block
+    for (let j = i + 1; j < sourceBlocks.length; j++) {
+      if (!sourceBlocks[j].trim() || isImageBlock(sourceBlocks[j])) continue;
+      const idx = currentBlocks.findIndex(c => normalizeBlock(c) === normalizeBlock(sourceBlocks[j]));
+      if (idx !== -1) { currentBlocks.splice(idx, 0, block); inserted = true; break; }
+    }
+
+    if (!inserted) currentBlocks.push(block); // last resort: append
+  }
+
+  return currentBlocks.join('\n\n').trim() + '\n';
+}
+
+// ── Download from old server ─────────────────────────────────────────────
+// CUSTOMIZE: adjust host/IP for your old WordPress server
+
+function fetchFromOldServer(urlPath) {
+  return new Promise((resolve, reject) => {
+    const options = OLD_IP
+      ? { host: OLD_IP, servername: OLD_HOST, headers: { Host: OLD_HOST } }
+      : { host: OLD_HOST };
+    https.get({ ...options, path: urlPath, port: 443, rejectUnauthorized: false },
+      (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          return fetchFromOldServer(new URL(res.headers.location).pathname).then(resolve, reject);
+        }
+        if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+        const chunks = [];
+        res.on('data', c => chunks.push(c));
+        res.on('end', () => resolve(Buffer.concat(chunks)));
+      }).on('error', reject);
+  });
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────
+
+const args = process.argv.slice(2);
+const inject = args.includes('--inject');
+const replaceBody = args.includes('--replace-body');
+const slugs = args.filter(a => !a.startsWith('--'));
+
+if (!slugs.length) {
+  console.error('Usage: node restore-missing-images.mjs [--inject|--replace-body] <slug> [slug...]');
+  process.exit(1);
+}
+
+fs.mkdirSync(IMAGES_DIR, { recursive: true });
+const sourceBodies = (inject || replaceBody) ? buildSourceBodyMap() : new Map();
+
+for (const slug of slugs) {
+  const filePath = path.join(CONTENT_DIR, `${slug}.md`);
+  if (!fs.existsSync(filePath)) { console.warn(`Skip: ${slug} not found`); continue; }
+
+  let raw = fs.readFileSync(filePath, 'utf8');
+  const fmEnd = raw.indexOf('\n---\n', 4);
+  const frontmatter = raw.slice(0, fmEnd + 5);
+  const body = raw.slice(fmEnd + 5).trimStart();
+
+  if (replaceBody && sourceBodies.has(slug)) {
+    raw = frontmatter + sourceBodies.get(slug) + '\n';
+    fs.writeFileSync(filePath, raw);
+    console.log(`${slug}: body replaced from XML source`);
+  } else if (inject && sourceBodies.has(slug)) {
+    const merged = injectMissingImageBlocks(sourceBodies.get(slug), body);
+    fs.writeFileSync(filePath, frontmatter + merged);
+    console.log(`${slug}: injected missing image blocks`);
+  }
+
+  // Localize any remaining remote images
+  const remoteUrls = extractImageUrls(raw).filter(u => u.startsWith('http'));
+  for (const url of remoteUrls) {
+    const filename = path.basename(new URL(url).pathname);
+    const dest = path.join(IMAGES_DIR, filename);
+    if (fs.existsSync(dest)) continue;
+    try {
+      const buf = await fetchFromOldServer(new URL(url).pathname);
+      fs.writeFileSync(dest, buf);
+      raw = fs.readFileSync(filePath, 'utf8').replaceAll(url, `/images/posts/${filename}`);
+      fs.writeFileSync(filePath, raw);
+      console.log(`  Downloaded: ${filename}`);
+    } catch (e) { console.error(`  Failed: ${url} — ${e.message}`); }
+  }
+}
+```
+
+Key concepts:
+- **Block-level diffing** — splits markdown into double-newline-separated blocks, matches text blocks between source and current, finds image blocks that exist in source but not in current
+- **Fuzzy image name matching** — normalizes filenames by stripping dimensions (`-800x600`), dates, `-copy` suffixes to detect equivalent images even when WordPress generated multiple sizes
+- **Position inference** — inserts recovered images next to the nearest matching text block (looks backward first, then forward) to preserve reading flow
+- **Three modes** — default just localizes remote URLs; `--inject` does the smart merge; `--replace-body` is the nuclear option when a post is too mangled to patch
+
+## 10. RSS Feed to Content Stubs (Optional)
+
+Use when your WordPress site has a podcast, newsletter archive, or other external feed with episodes/issues that don't have corresponding blog posts. This script fetches the feed, compares against existing content, and generates markdown stubs for missing entries.
+
+```javascript
+// generate-feed-stubs.mjs
+// Generate landing pages from an RSS feed for entries without blog posts.
+// Usage: node scripts/generate-feed-stubs.mjs
+import fs from 'fs';
+import path from 'path';
+import https from 'https';
+import { parseStringPromise } from 'xml2js';
+
+// CUSTOMIZE: your feed URL and content directory
+const POSTS_DIR = 'src/content/posts';
+const RSS_URL = 'https://feeds.transistor.fm/your-podcast-feed';
+
+// ── Fetch RSS ────────────────────────────────────────────────────────────
+
+function fetchRSS(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, { timeout: 30000 }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return fetchRSS(res.headers.location).then(resolve).catch(reject);
+      }
+      if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve(data));
+    }).on('error', reject);
+  });
+}
+
+// ── Extract episode/entry number from title ──────────────────────────────
+
+function extractEntryNumber(title) {
+  // Match: #80, EP80, EP.80, Episode 80, Issue 12, Vol. 3, etc.
+  // CUSTOMIZE: adjust patterns for your feed's naming convention
+  const match = title.match(/(?:#|EP\.?\s?|Episode\s?|Issue\s?|Vol\.?\s?)(\d+)/i);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+// ── Simple HTML to text ──────────────────────────────────────────────────
+
+function htmlToText(html) {
+  if (!html) return '';
+  return html
+    .replace(/<a\s+[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_, href, text) => {
+      const clean = text.replace(/<[^>]+>/g, '').trim();
+      return clean && !/^https?:\/\//.test(clean) ? `[${clean}](${href})` : ` ${href} `;
+    })
+    .replace(/<li[^>]*>/gi, '\n- ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/ {2,}/g, ' ').replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// ── Build slug from title ────────────────────────────────────────────────
+
+function titleToSlug(title) {
+  return title.toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .substring(0, 80);
+}
+
+// ── Find existing entry numbers in blog posts ────────────────────────────
+
+function getExistingEntries() {
+  const files = fs.readdirSync(POSTS_DIR).filter(f => f.endsWith('.md'));
+  const numbers = new Set();
+  const slugs = new Set();
+
+  for (const file of files) {
+    const content = fs.readFileSync(path.join(POSTS_DIR, file), 'utf-8');
+    const titleMatch = content.match(/^title:\s*["']?(.+?)["']?\s*$/m);
+    if (titleMatch) {
+      const num = extractEntryNumber(titleMatch[1]);
+      if (num !== null) numbers.add(num);
+    }
+    const slugMatch = content.match(/^slug:\s*["']?(.+?)["']?\s*$/m);
+    if (slugMatch) slugs.add(slugMatch[1]);
+
+    // CUSTOMIZE: detect existing embeds for your platform
+    if (content.includes('share.transistor.fm') || content.includes('open.spotify.com/embed/episode')) {
+      const fileNum = file.match(/(\d+)/);
+      if (fileNum) numbers.add(parseInt(fileNum[1], 10));
+    }
+  }
+
+  return { numbers, slugs };
+}
+
+// ── Build embed URL from feed item ───────────────────────────────────────
+
+function getEmbedUrl(item) {
+  const link = item.link?.[0] || '';
+  // CUSTOMIZE: adjust for your podcast platform (Transistor, Anchor, etc.)
+  if (link.includes('transistor.fm')) {
+    try {
+      const episodePath = new URL(link).pathname.replace(/^\//, '');
+      return `https://share.transistor.fm/e/${episodePath}`;
+    } catch { return ''; }
+  }
+  return link;
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────
+
+async function main() {
+  const rssXml = await fetchRSS(RSS_URL);
+  const result = await parseStringPromise(rssXml);
+  const items = result.rss.channel[0].item || [];
+
+  console.log(`Found ${items.length} items in RSS feed.`);
+
+  const { numbers, slugs } = getExistingEntries();
+  console.log(`Found ${numbers.size} existing entries in blog posts.\n`);
+
+  let created = 0;
+
+  for (const item of items) {
+    const title = item.title?.[0] || '';
+    const entryNum = extractEntryNumber(title);
+
+    // Skip if we already have content for this entry
+    if (entryNum !== null && numbers.has(entryNum)) continue;
+
+    const embedUrl = getEmbedUrl(item);
+    if (!embedUrl) { console.log(`  [skip] No embed: "${title}"`); continue; }
+
+    const pubDate = new Date(item.pubDate?.[0] || '').toISOString().split('T')[0];
+    const summary = item['itunes:summary']?.[0] || item.description?.[0] || '';
+    const description = htmlToText(summary).substring(0, 200);
+    const bodyHtml = item['content:encoded']?.[0] || item.description?.[0] || '';
+    const bodyText = htmlToText(bodyHtml).split('\n').filter(l => l.trim()).slice(0, 30).join('\n\n');
+
+    // CUSTOMIZE: slug prefix for your content type
+    const slug = entryNum !== null ? `podcast-ep${entryNum}` : `podcast-${titleToSlug(title)}`;
+    const filePath = path.join(POSTS_DIR, `${slug}.md`);
+
+    if (fs.existsSync(filePath) || slugs.has(slug)) continue;
+
+    const safeTitle = title.replace(/"/g, '\\"');
+    const safeDesc = description.replace(/"/g, '\\"');
+
+    // CUSTOMIZE: frontmatter fields, categories, embed HTML for your platform
+    const markdown = `---
+title: "${safeTitle}"
+slug: "${slug}"
+date: "${pubDate}"
+description: "${safeDesc}"
+categories:
+  - Podcast
+podcastEmbed: "${embedUrl}"
+---
+
+<iframe src="${embedUrl}" width="100%" height="180" frameborder="0" scrolling="no" seamless="true" style="width:100%;height:180px;"></iframe>
+
+${bodyText}
+`;
+
+    fs.writeFileSync(filePath, markdown);
+    console.log(`  [create] ${slug}`);
+    created++;
+  }
+
+  console.log(`\nCreated ${created} new stubs.`);
+}
+
+main().catch(console.error);
+```
+
+Key concepts:
+- **Entry number extraction** — flexible regex matching `#80`, `EP80`, `Episode 80`, etc. Customize for your feed's naming convention
+- **Duplicate detection** — checks both parsed entry numbers AND existing embed URLs to avoid creating stubs for episodes that already have blog posts (even if titled differently)
+- **HTML-to-text with link preservation** — critical: adds spaces around `<a>` tag replacements to prevent URL jamming (see common-issues.md)
+- **Slug generation** — number-prefixed slugs (`podcast-ep80`) when possible, title-based fallback otherwise
+- **Platform-agnostic** — works with Transistor, Anchor, Spotify, or any podcast platform that provides an RSS feed. Customize `getEmbedUrl()` for your embed format
