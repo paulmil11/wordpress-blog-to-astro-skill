@@ -2,9 +2,13 @@
 
 A Claude Code skill for migrating WordPress blogs to Astro static sites. Built from real migrations across multiple sites — a personal blog with 180+ posts ([pmillerd.com](https://pmillerd.com)), a book/podcast site with 120+ posts ([pathlesspath.com](https://pathlesspath.com)), a bilingual podcast/blog ([angiecreates.io](https://angiecreates.io)), and a consulting content site ([strategyu.co](https://strategyu.co)).
 
-| [pmillerd.com](https://pmillerd.com) | [pathlesspath.com](https://pathlesspath.com) | [strategyu.co](https://strategyu.co) | [angiecreates.io](https://angiecreates.io) |
-|---|---|---|---|
-| ![pmillerd.com — personal blog migrated from WordPress](images/pmillerd-screenshot.png) | ![pathlesspath.com — book and podcast site on Cloudflare](images/pathlesspath-screenshot.png) | ![StrategyU — consulting skills site on Vercel](images/strategyu-screenshot.png) | ![Angie Creates — bilingual podcast/blog on Cloudflare Pages](images/angiecreates-screenshot.png) |
+| [pmillerd.com](https://pmillerd.com) | [pathlesspath.com](https://pathlesspath.com) |
+|---|---|
+| ![pmillerd.com — personal blog migrated from WordPress](images/pmillerd-screenshot.png) | ![pathlesspath.com — book and podcast site on Cloudflare](images/pathlesspath-screenshot.png) |
+
+| [strategyu.co](https://strategyu.co) | [angiecreates.io](https://angiecreates.io) |
+|---|---|
+| ![StrategyU — consulting skills site on Vercel](images/strategyu-screenshot.png) | ![Angie Creates — bilingual podcast/blog on Cloudflare Pages](images/angiecreates-screenshot.png) |
 
 ## What This Skill Does
 
