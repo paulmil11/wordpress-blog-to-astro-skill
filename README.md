@@ -1,10 +1,10 @@
 # WordPress to Astro Migration Skill
 
-A Claude Code skill for migrating WordPress blogs to Astro static sites. Built from real migrations across multiple sites — a personal blog with 180+ posts ([pmillerd.com](https://pmillerd.com)), a bilingual podcast/blog ([angiecreates.io](https://angiecreates.io)), and a consulting content site ([strategyu.co](https://strategyu.co)).
+A Claude Code skill for migrating WordPress blogs to Astro static sites. Built from real migrations across multiple sites — a personal blog with 180+ posts ([pmillerd.com](https://pmillerd.com)), a book/podcast site with 120+ posts ([pathlesspath.com](https://pathlesspath.com)), a bilingual podcast/blog ([angiecreates.io](https://angiecreates.io)), and a consulting content site ([strategyu.co](https://strategyu.co)).
 
-| [pmillerd.com](https://pmillerd.com) | [strategyu.co](https://strategyu.co) | [angiecreates.io](https://angiecreates.io) |
-|---|---|---|
-| ![pmillerd.com — personal blog migrated from WordPress](images/pmillerd-screenshot.png) | ![StrategyU — consulting skills site on Vercel](images/strategyu-screenshot.png) | ![Angie Creates — bilingual podcast/blog on Cloudflare Pages](images/angiecreates-screenshot.png) |
+| [pmillerd.com](https://pmillerd.com) | [pathlesspath.com](https://pathlesspath.com) | [strategyu.co](https://strategyu.co) | [angiecreates.io](https://angiecreates.io) |
+|---|---|---|---|
+| ![pmillerd.com — personal blog migrated from WordPress](images/pmillerd-screenshot.png) | ![pathlesspath.com — book and podcast site on Cloudflare](images/pathlesspath-screenshot.png) | ![StrategyU — consulting skills site on Vercel](images/strategyu-screenshot.png) | ![Angie Creates — bilingual podcast/blog on Cloudflare Pages](images/angiecreates-screenshot.png) |
 
 ## What This Skill Does
 
@@ -111,6 +111,8 @@ Patterns for building out the Astro site after content is migrated:
 - **Dark Mode** — CSS custom properties with `[data-theme="dark"]` toggle, localStorage persistence, Astro scoped style patterns
 - **Interactive Blog Index** — Category filtering, search, sort by reading time, show more pagination, random post, blog stats
 - **Building Standalone Pages** — Recreating non-blog pages from old site content with responsive embeds
+- **Build-Time Search Index** — Generate search data from content collections instead of hand-maintained JSON
+- **Image Audit Script** — Find all broken image references before they reach production
 - **Content Integrity Rule** — Never shorten or paraphrase the author's original content
 
 ### `common-issues.md` — Troubleshooting Guide
@@ -133,6 +135,12 @@ Solutions for problems we actually hit:
 - **Responsive YouTube embeds** — CSS `:has()` selector pattern for wrapping iframes
 - **Stale build output** — Why `dist/` may not reflect recent changes without a fresh build
 - **WordPress Redirection plugin quirks** — Missing regex option, CSV format, category path differences
+- **Missing images concentrated in few posts** — Why image problems cluster and how to audit efficiently
+- **Legacy subdomain for media recovery** — `old.yoursite.com` trick for fetching WordPress uploads after cutover
+- **Featured image references to deleted files** — Build-time asset existence checks with fallback images
+- **WordPress export vs live site divergence** — Why the XML export is only a starting point
+- **TypeScript leaking into client scripts** — Subtle Astro gotcha with `<script>` vs `<script lang="ts">`
+- **Hand-maintained search JSON drift** — Build-time generation from content collections
 
 ## What This Skill Does NOT Handle
 
@@ -154,6 +162,8 @@ Check your current MX records (`dig MX yourdomain.com`) before canceling WordPre
 This skill was built from:
 
 - **[pmillerd.com](https://pmillerd.com)** — 180 blog posts + 10 standalone pages, domain migration from think-boundless.com, dark mode, interactive blog with category filtering/search/sort, WordPress Redirection plugin CSV for 500+ redirects, Tailwind CSS v4, reading library page with 55+ books. Special challenges: internal link audit across 180 posts, building standalone pages from old site content via WebFetch, responsive YouTube embed cleanup, protocol-relative URL fixes.
+
+- **[pathlesspath.com](https://pathlesspath.com)** — 121 blog posts + 22 pages + podcast with 80+ episodes, Cloudflare Pages + Workers AI deployment, semantic podcast search with Vectorize. Special challenges: massive missing image recovery (legacy subdomain pattern), podcast episode metadata matching with manual override layer, build-time search index generation, post-cutover media audit scripts, structured data and SEO cleanup pass.
 
 - **[angiecreates.io](https://angiecreates.io)** — 84 blog posts + 80 podcast episodes, bilingual Chinese/English, Transistor.fm integration, Cloudflare Pages deployment. Special challenges: RSS-based episode generation, multilingual boilerplate removal, jammed URL fixes.
 

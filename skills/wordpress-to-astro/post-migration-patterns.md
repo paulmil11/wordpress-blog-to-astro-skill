@@ -891,7 +891,90 @@ When the old WordPress site had non-blog pages (coaching, reading lists, tools, 
 }
 ```
 
-## 18. Content Integrity Rule
+## 18. Build-Time Search Index
+
+Generate search data from the content collection at build time instead of maintaining a separate JSON file. This ensures the search index always matches the actual site content.
+
+```typescript
+// src/pages/search.json.ts
+import { getCollection } from 'astro:content';
+
+export async function GET() {
+  const posts = await getCollection('blog', ({ data }) => !data.draft);
+  const index = posts.map(p => ({
+    slug: p.data.slug || p.slug,
+    title: p.data.title,
+    description: p.data.description || '',
+    categories: p.data.categories || [],
+    date: p.data.date,
+  }));
+  return new Response(JSON.stringify(index), {
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+```
+
+On the client side, fetch `/search.json` and filter in JavaScript. For sites with hundreds of posts, this is fast enough — the JSON is typically under 50KB. For larger sites, consider adding a lightweight client-side search library like Fuse.js or Pagefind.
+
+Key principle: keep external source data out of runtime dependencies. If you have data from external services (podcast transcripts, newsletter archives, etc.), sync it into a tracked snapshot inside the repo at build time so deploys stay self-contained and reproducible.
+
+## 19. Image Audit Script
+
+Run this after Phase 3 to find all broken image references before they reach production:
+
+```javascript
+// scripts/audit-images.mjs
+import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
+import path from 'path';
+
+const POSTS_DIR = 'src/content/blog';
+const files = readdirSync(POSTS_DIR).filter(f => f.endsWith('.md'));
+const missing = [];
+
+for (const file of files) {
+  const content = readFileSync(path.join(POSTS_DIR, file), 'utf8');
+
+  // Check markdown image refs
+  for (const match of content.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)) {
+    const ref = match[1];
+    if (ref.startsWith('http')) continue; // external, skip
+    const localPath = path.join('public', ref.replace(/^\//, ''));
+    if (!existsSync(localPath)) {
+      missing.push({ file, ref, type: 'markdown' });
+    } else if (statSync(localPath).size === 0) {
+      missing.push({ file, ref, type: 'empty-file' });
+    }
+  }
+
+  // Check frontmatter featuredImage
+  const fmMatch = content.match(/featuredImage:\s*["']?([^\s"']+)/);
+  if (fmMatch && fmMatch[1].startsWith('/')) {
+    const localPath = path.join('public', fmMatch[1].replace(/^\//, ''));
+    if (!existsSync(localPath)) {
+      missing.push({ file, ref: fmMatch[1], type: 'featuredImage' });
+    }
+  }
+}
+
+if (missing.length === 0) {
+  console.log('All image references resolve to existing files.');
+} else {
+  console.log(`Found ${missing.length} missing image references:\n`);
+  // Group by file for easier fixing
+  const byFile = {};
+  for (const m of missing) {
+    (byFile[m.file] ??= []).push(m);
+  }
+  for (const [file, refs] of Object.entries(byFile)) {
+    console.log(`  ${file} (${refs.length} missing)`);
+    for (const r of refs) console.log(`    ${r.type}: ${r.ref}`);
+  }
+}
+```
+
+Run this early and often — image problems compound if left until post-migration polish.
+
+## 20. Content Integrity Rule
 
 **CRITICAL**: When working with a user's blog content, NEVER shorten, paraphrase, summarize, or edit the author's original words. This applies to:
 - Blog post body text

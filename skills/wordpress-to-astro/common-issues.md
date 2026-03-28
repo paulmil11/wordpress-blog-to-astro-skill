@@ -121,6 +121,69 @@ Follow Us:
 
 **Solution:** Download all images to flat `public/images/posts/` directory, rewrite all references. Simpler than recreating the date-based directory structure.
 
+### Missing images are concentrated in a few posts
+
+**Problem:** After running the image download script, many posts look "done" until you audit and discover broken images. The missing images aren't spread evenly — they're usually concentrated in a handful of heavily-edited or long-running posts that accumulated media over years of WordPress edits, plugin changes, and CDN reconfigurations.
+
+**Solution:** Run an image audit script immediately after Phase 3 (not later). For every image reference in markdown, verify the local file exists and is a valid image (not a 0-byte file or HTML error page). Focus on fixing the posts with the most missing images first — this usually covers 80% of the problem. The long tail is often duplicate images or assets that were intentionally removed.
+
+```bash
+# Quick audit: find image refs that don't resolve to local files
+grep -rn '!\[.*\](/images/' src/content/blog/ | while read line; do
+  file=$(echo "$line" | grep -oP '/images/[^)]+')
+  if [ ! -f "public$file" ]; then
+    echo "MISSING: $file in $(echo "$line" | cut -d: -f1)"
+  fi
+done
+```
+
+### Legacy subdomain for post-cutover media recovery
+
+**Problem:** After pointing the main domain to the new Astro site, you discover missing images that were served from `wp-content/uploads/` on the old WordPress host. You can't flip the root domain back without taking down the new site.
+
+**Solution:** Point a temporary subdomain like `old.yoursite.com` at the old WordPress hosting server and map it to the original WordPress docroot. This gives you a working URL to fetch `wp-content/uploads/...` assets from:
+
+```bash
+# Recover a specific image
+curl -o public/images/posts/photo.jpg https://old.yoursite.com/wp-content/uploads/2023/05/photo.jpg
+
+# Batch recovery from a list of missing images
+while read img; do
+  filename=$(basename "$img")
+  curl -o "public/images/posts/$filename" "https://old.yoursite.com$img"
+done < missing-images.txt
+```
+
+This also lets you inspect legacy pages, check old redirects, and verify content without disrupting the live site. Remove the subdomain DNS record once recovery is complete.
+
+### Featured image references to deleted files
+
+**Problem:** WordPress frontmatter `featuredImage` fields reference files that were deleted from the media library or never downloaded. The image path looks valid but the file doesn't exist, resulting in broken thumbnails in related posts, OG images, and RSS feeds.
+
+**Solution:** Add an asset existence check wherever featured images are used. At build time, verify the file exists in `public/` before rendering it:
+
+```javascript
+function assetExists(assetPath) {
+  if (!assetPath.startsWith('/')) return true; // external URL, assume valid
+  const localPath = path.join(process.cwd(), 'public', assetPath.replace(/^\//, ''));
+  return fs.existsSync(localPath);
+}
+```
+
+Use a fallback image (default OG image, category-specific placeholder, or auto-generated SVG) when the featured image is missing.
+
+## WordPress Export vs Live Site
+
+### Export is not a clean source of truth
+
+**Problem:** The WordPress XML export captures a snapshot of the database, but it doesn't reflect the full reality of the live site. Old embeds survive in content long after the platform or URL pattern is obsolete. Inline images may reference CDN URLs that have since been reconfigured. Redirects configured in plugins aren't in the export. Third-party integrations (analytics, forms, search) need to be re-implemented.
+
+**Solution:** Treat the export as a starting point, not the final word. Plan to reconcile exported content against the live site during multiple audit passes:
+- **After Phase 2 (Convert)**: Spot-check 5-10 posts against the live site to catch systematic conversion issues
+- **After Phase 3 (Images)**: Audit for missing images (see above)
+- **After Phase 6 (Deploy)**: Full QA — forms, embeds, analytics, search, structured data
+- **After launch**: Monitor Google Search Console for crawl errors and 404s that reveal gaps
+
 ## Deployment
 
 ### Cloudflare Pages vs Workers
@@ -298,3 +361,35 @@ Include: all blog post slugs, special pages, homepage, category pages (note `/ca
 **Problem:** WordPress uses `/category/slug/` but Astro generates `/categories/slug/` (or whatever you configured). Redirects need to account for this.
 
 **Solution:** Include explicit category redirects in the CSV: `/category/modern-careers/` → `https://newdomain.com/categories/modern-careers/`. Don't rely on regex for this — list each category explicitly.
+
+## Astro Build & Runtime Gotchas
+
+### TypeScript syntax leaking into client-side scripts
+
+**Problem:** Astro components let you write TypeScript in the frontmatter fence (`---`), but `<script>` tags in the template are shipped to the browser as-is by default. If you accidentally use TypeScript syntax (type annotations, `as` casts, interfaces) in a client `<script>` block, the build may succeed but the script silently fails in production browsers.
+
+**Solution:** Keep client-side `<script>` blocks as plain JavaScript. If you need TypeScript in client code, use `<script lang="ts">` — Astro will transpile it. But for inline scripts (`<script is:inline>`), there's no transpilation — it must be valid browser JS.
+
+### Hand-maintained search JSON drifts from content
+
+**Problem:** If you create a search feature backed by a hand-maintained `search.json` or similar index file, it drifts out of sync as posts are added, edited, or removed. New posts don't appear in search, deleted posts return ghost results.
+
+**Solution:** Generate search data from the content source at build time. Write a build script or Astro endpoint that reads the content collection and outputs the search index:
+
+```javascript
+// src/pages/search.json.ts
+import { getCollection } from 'astro:content';
+
+export async function GET() {
+  const posts = await getCollection('blog', ({ data }) => !data.draft);
+  const index = posts.map(p => ({
+    slug: p.data.slug || p.slug,
+    title: p.data.title,
+    description: p.data.description || '',
+    categories: p.data.categories || [],
+  }));
+  return new Response(JSON.stringify(index));
+}
+```
+
+This way the search index is always aligned with the actual site content.

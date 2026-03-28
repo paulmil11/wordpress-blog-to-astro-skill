@@ -26,6 +26,8 @@ The export file contains all posts, pages, categories, tags, comments, custom fi
 
 If the site has many posts (500+), WordPress may split the export into multiple XML files. Process each one separately or concatenate them.
 
+**Important:** A WordPress export is only a starting point, not a clean source of truth. Expect to reconcile exported content with live site behavior, old embeds, redirects, missing media, search indexes, and third-party integrations throughout the migration.
+
 ### Phase 1: Extract (WordPress XML → JSON)
 
 ```bash
@@ -42,13 +44,26 @@ node scripts/convert-posts.mjs
 
 Convert WordPress HTML to Astro-compatible markdown using Turndown. Apply custom rules to preserve embeds (YouTube, Substack, podcast players) as raw HTML. Strip WordPress block comments (`<!-- wp:xxx -->`), spacer blocks, and GenerateBlocks wrappers. Generate YAML frontmatter with dual date fields (`date` for display, `rawDate` for sorting).
 
-### Phase 3: Download Images
+### Phase 3: Download & Audit Images
 
 ```bash
 node scripts/download-images.mjs
 ```
 
 Scan all markdown files for external image URLs. Download to `public/images/posts/`. Rewrite URLs in markdown to local paths. Handle redirects (up to 5 hops), track failures separately. Idempotent — skips already-downloaded files.
+
+**Image audit (run immediately after download):**
+
+Images are consistently the hardest part of any WordPress migration. The download script catches URLs that are still live, but many images will be missing — deleted from the WordPress media library, served by a CDN that's since been reconfigured, or referenced by posts that were edited after export. Run an audit immediately:
+
+1. Grep all markdown for image references (both `![](url)` and `<img src="url">`)
+2. Check that every referenced file actually exists in `public/images/posts/`
+3. Check that every `featuredImage` in frontmatter points to a real file
+4. Log missing images with the post slug so you can fix them in batches
+
+Missing images tend to be concentrated in a few heavily-edited posts rather than spread evenly. Fix the biggest posts first — that usually covers 80% of the problem.
+
+If images are missing because the WordPress host is no longer serving them, see the **legacy subdomain recovery** pattern in `common-issues.md`.
 
 ### Phase 4: Clean Up Content
 
@@ -79,11 +94,13 @@ npm run build  # outputs to dist/
 
 Verify build succeeds, check for broken links and missing images.
 
-**Redirects** — Critical for preserving SEO. Generate a redirect map from old WordPress URLs (e.g., `/2024/01/slug/` or `/blog/slug/`) to new Astro URLs (`/slug`). Don't forget `/feed/` → `/rss.xml` and `/wp-admin` → `/`. See `post-migration-patterns.md` section 11 for the full redirect generation script and platform-specific formats.
+**Redirects** — Critical for preserving SEO. Redirects matter as much as content migration — the site can look perfect and still fail badly after launch if old WordPress URLs, category archives, series pages, and homepage redirects are not mapped carefully. Generate a redirect map from old WordPress URLs (e.g., `/2024/01/slug/` or `/blog/slug/`) to new Astro URLs (`/slug`). Don't forget `/feed/` → `/rss.xml` and `/wp-admin` → `/`. See `post-migration-patterns.md` section 11 for the full redirect generation script and platform-specific formats.
 
 For **domain migrations** (old-domain.com → new-domain.com), also generate a redirect file the user can import into the old site's WordPress Redirection plugin (CSV format). Include blog posts, special pages, categories (`/category/` → `/categories/`), RSS feed, and homepage. See `post-migration-patterns.md` section 14 for the WordPress Redirection plugin CSV format.
 
 **Deploy** — Both Vercel and Cloudflare Pages are free for static sites (unlimited bandwidth, custom domains, automatic HTTPS, global CDN). See `post-migration-patterns.md` sections 12-13 for step-by-step deploy guides for each platform.
+
+**Legacy subdomain for post-cutover media recovery** — After pointing the main domain to the new host, you may discover missing images or need to reference old pages. Instead of flipping the root domain back to WordPress, point a temporary subdomain like `old.yoursite.com` at the old WordPress host and map it to the original docroot. This lets scripts fetch `wp-content/uploads/...` assets and you can inspect legacy pages without disrupting the live site. Remove the subdomain once recovery is complete.
 
 ### Phase 7: Post-Migration Polish
 
@@ -104,6 +121,10 @@ After the content is migrated and building, there's always a design/polish phase
 7. **New categories** — Add new blog categories to posts as needed (YAML array format in frontmatter). Category pages auto-generate via `[category].astro` with slugified names.
 
 8. **Gradient/visual polish** — Smooth section transitions (vertical gradient fades), consistent max-widths across sections, responsive mobile layouts.
+
+9. **Build-time search index** — If adding site search, generate the search index from content at build time rather than maintaining a separate JSON file by hand. Hand-maintained search data drifts quickly as posts are added or edited. A build script that reads the content collection and outputs the index stays aligned automatically.
+
+10. **Full QA pass** — Static-site migrations still need real application QA. Forms, search, analytics, embeds, and structured metadata all need testing after the content itself is migrated. Expect a final polish pass after launch-quality is reached — that is where the subtle problems usually show up.
 
 **CRITICAL RULE**: Never shorten, paraphrase, or edit the user's original blog content. All content edits must preserve the author's exact words. Only fix structural issues (links, embeds, frontmatter).
 
